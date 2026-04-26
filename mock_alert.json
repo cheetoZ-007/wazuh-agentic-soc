@@ -1,0 +1,23 @@
+{
+  "rule": {
+    "level": 12,
+    "description": "High vulnerability detected: CVE-2024-1086 in Linux Kernel (Use-After-Free in netfilter)."
+  },
+  "agent": {
+    "id": "002",
+    "name": "Ubuntu-Desktop-VM",
+    "ip": "10.0.2.15"
+  },
+  "data": {
+    "vulnerability": {
+      "package": {
+        "name": "linux-image-generic",
+        "condition": "Package version is strictly less than 6.8.0-31.31"
+      },
+      "severity": "High",
+      "cvss": {
+        "score": 7.8
+      }
+    }
+  }
+}
