@@ -23,3 +23,23 @@ You can test the AI agent pipeline immediately without needing a live Wazuh serv
    ```bash
    ollama run qwen2.5-coder:14b
    ollama run llama3.1:8b
+3. Clone this repository and install dependencies:
+   ```bash
+   npm install openai
+   Run the pipeline:
+4. Run the pipeline
+   ```bash
+   node index.js
+
+Watch the terminal as the Architect reads mock_alert.json, passes the strategy to the Worker, and generates a ready-to-deploy patch_CVE-2024-1086.sh file on your drive.
+
+# 🔌 Going Live (Wazuh Integration)
+To connect this brain to a live Wazuh 4.8+ environment:
+
+1. Open index.js.
+
+2. Delete the Mock Mode block inside getAlertData().
+
+3. Uncomment the Live Mode block and add your Wazuh Indexer URL and Credentials.
+
+4. The script will query the Elasticsearch wazuh-states-vulnerabilities-* index directly, parse live alerts, and automatically write patches for your infrastructure.
