@@ -26,7 +26,6 @@ You can test the AI agent pipeline immediately without needing a live Wazuh serv
 3. Clone this repository and install dependencies:
    ```bash
    npm install openai
-   Run the pipeline:
 4. Run the pipeline
    ```bash
    node index.js
