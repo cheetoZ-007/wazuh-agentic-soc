@@ -1,81 +1,84 @@
 const fs = require('fs');
-const { OpenAI } = require('openai');
-
-// Connect to your local RTX 3060 via Ollama
-const ollama = new OpenAI({
-    baseURL: 'http://localhost:11434/v1',
-    apiKey: 'ollama', 
-});
+const { Agent } = require('open-multi-agent'); 
 
 // =====================================================================
 // STEP 1: THE DATA INGESTION ENGINE (MOCK MODE)
 // =====================================================================
-async function getAlertData() {
-    console.log("📡 Fetching Vulnerability Data from Mock File...");
-    const mockData = fs.readFileSync('./mock_alert.json', 'utf8');
-    return JSON.parse(mockData);
-}
+console.log("📡 Fetching Vulnerability Data from Mock File...");
+const alertData = JSON.parse(fs.readFileSync('./mock_alert.json', 'utf8'));
+
+const agentName = alertData.agent.name;
+const packageName = alertData.data.vulnerability.package.name;
+const cve = alertData.data.vulnerability.cve || "CVE-2024-1086";
+
+console.log(`🚨 Ingesting Alert for: ${agentName} | Target: ${packageName}`);
 
 // =====================================================================
-// STEP 2: THE AI SOC PIPELINE (QWEN -> LLAMA)
+// STEP 2: DEFINE THE AGENTS (PURE OMA FRAMEWORK)
 // =====================================================================
-async function runSOCPipeline() {
+
+// Shared configuration to route OMA to your local Ollama instance
+const localLLMConfig = {
+    baseURL: 'http://localhost:11434/v1',
+    apiKey: 'ollama' // Required by the OpenAI adapter, ignored by Ollama
+};
+
+// 🧠 The Level 3 Architect
+const architect = new Agent({
+    name: 'SOC_Architect',
+    model: 'qwen2.5-coder:14b',
+    ...localLLMConfig,
+    extraBody: { keep_alive: "30s" }, 
+    systemPrompt: `You are an autonomous Level 3 SOC Architect. Read the provided Wazuh vulnerability alert for agent '${agentName}'.
+    
+    Your tasks:
+    1. Analyze the CVE and identify the necessary package updates.
+    2. Delegate the task of writing a bash script to the Worker.
+    3. The Worker MUST create a file named patch_${cve}.sh containing the bash commands to update the ${packageName} package and reboot the system.
+    
+    CRITICAL: Do not write the script yourself. Output a strict set of instructions for the Worker agent.`
+});
+
+// ⚡ The DevOps Worker
+const worker = new Agent({
+    name: 'DevOps_Worker',
+    model: 'llama3.1:8b',
+    ...localLLMConfig,
+    extraBody: { keep_alive: "30s" }, 
+    systemPrompt: `You are a DevOps Worker. Execute the Architect's plan exactly as written.
+    
+    CRITICAL: Output ONLY the raw bash script code. Do not use markdown code blocks (\`\`\`). Do not add explanations. Just the raw bash commands.`
+});
+
+// =====================================================================
+// STEP 3: RUN THE ORCHESTRATION PIPELINE
+// =====================================================================
+async function runPipeline() {
     try {
-        // 1. Get the data 
-        const alertData = await getAlertData();
+        console.log("\n🧠 Architect formulating mitigation strategy...");
         
-        // Extract variables dynamically 
-        const agentName = alertData.agent.name;
-        const packageName = alertData.data.vulnerability.package.name;
-        const cve = alertData.data.vulnerability.cve || "CVE-2024-1086";
+        // 1. Pass the alert data to the Architect
+        const architectPlan = await architect.run(`Analyze this vulnerability data: ${JSON.stringify(alertData)}`);
+        console.log("\n📋 Plan formulated. Passing to Worker...");
 
-        console.log(`🚨 Ingesting Alert for: ${agentName} | Target: ${packageName}`);
-        console.log("\n🧠 Waking up Architect (Qwen 2.5 Coder 14B)...");
+        console.log("\n⚡ Worker drafting raw bash code...");
         
-        // 2. The Architect Strategy
-        const architectPrompt = `You are an autonomous Level 3 SOC Architect. Read the provided Wazuh vulnerability alert for agent '${agentName}'.
+        // 2. Pass the plan to the Worker
+        let bashCode = await worker.run(`Execute this plan: \n\n${architectPlan}`);
         
-        Your tasks:
-        1. Analyze the CVE and identify the necessary package updates.
-        2. Delegate the task of writing a bash script to the Worker.
-        3. The Worker MUST create a file named patch_${cve}.sh containing the bash commands to update the ${packageName} package and reboot the system.
-        
-        CRITICAL: Do not write the script yourself. Output a strict set of instructions for the Worker agent.`;
-
-        const architectResponse = await ollama.chat.completions.create({
-            model: 'qwen2.5-coder:14b',
-            messages: [{ role: 'system', content: architectPrompt }],
-            extra_body: { keep_alive: "30s" } // Clear VRAM after 30 seconds
-        });
-
-        const architectPlan = architectResponse.choices[0].message.content;
-        console.log("\n📋 Architect's Plan formulated. Passing to Worker...");
-
-        console.log("\n⚡ Waking up Worker (Llama 3.1 8B)...");
-
-        // 3. The Worker Execution
-        const workerPrompt = `You are a DevOps Worker. Execute this plan from the Architect exactly as written:\n\n${architectPlan}\n\nCRITICAL: Output ONLY the raw bash script code. Do not use markdown code blocks (\`\`\`). Do not add explanations. Just the raw bash commands.`;
-
-        const workerResponse = await ollama.chat.completions.create({
-            model: 'llama3.1:8b',
-            messages: [{ role: 'user', content: workerPrompt }],
-            extra_body: { keep_alive: "30s" }
-        });
-
         // Regex cleaner to strip any AI chit-chat
-        let bashCode = workerResponse.choices[0].message.content;
         bashCode = bashCode.replace(/```bash\n?/g, '').replace(/```/g, '').trim();
 
-        // 4. File Write (The Physical Action)
+        // 3. File Write (The Physical Action)
         console.log("\n💾 Executing file_write tool...");
         const fileName = `./patch_${cve}.sh`;
         fs.writeFileSync(fileName, bashCode);
         console.log(`✅ SUCCESS: ${fileName} has been generated and saved to your drive!`);
 
     } catch (error) {
-        console.error("\n❌ Pipeline Crashed:", error.message);
+        console.error("\n❌ Pipeline Crashed:", error.message || error);
     }
 }
 
 // Fire the weapon
-runSOCPipeline();
+runPipeline();
